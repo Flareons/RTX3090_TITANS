@@ -30,7 +30,7 @@ with open("tok_data/test_tok/label_test.pkl", "rb") as f:
 
 #Model structure
 class TITANS_model(nn.Module):
-    def __init__(self, num_classes, dim_in=768, dim=768, n_blocks=3):
+    def __init__(self, num_classes, dim_in=768, dim=128, n_blocks=2):
         super().__init__()
         self.in_prj = nn.Linear(dim_in, dim) 
         # self.titans_cores = nn.ModuleList([Core(dim=dim) for _ in range(n_blocks)])
@@ -54,7 +54,7 @@ class TITANS_model(nn.Module):
 
         # mem_states = []
         # loss_mem = []
-        print("Shape before TITANS:", x.shape)
+        # print("Shape before TITANS:", x.shape)
         for block in self.titans_cores:
 
             x, _ = block(x)
@@ -83,11 +83,12 @@ class TITANS_model(nn.Module):
 model = TITANS_model(num_classes=2).to(device)
 
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay= 0.00001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
-batch_size = 16
+batch_size = 8
+accumulation_steps = 4
 
-for epoch in range(10):
+for epoch in range(1):
     model.train()
     total_loss = 0.0
     total_mem_loss = 0.0
@@ -168,25 +169,29 @@ for epoch in range(10):
             # ==========================================
             # Forward
             # ==========================================
-            optimizer.zero_grad()
 
-            logits = model(x)
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                logits = model(x)
 
-            # logits: [1, num_classes]
-            # label : [1]
-            
-            loss = criterion(logits, label)
+                # logits: [1, num_classes]
+                # label : [1]
+                
+                loss = criterion(logits, label)
+                loss = loss / accumulation_steps
 
             # ==========================================
             # Backward
             # ==========================================
             loss.backward()
-            optimizer.step()
+
+            if (j + 1) % accumulation_steps == 0:
+                optimizer.step()
+                optimizer.zero_grad()
 
             # ==========================================
             # Statistics
             # ==========================================
-            total_loss += loss.item()
+            total_loss += loss.item() * accumulation_steps
 
             total_correct += (
                 logits.argmax(dim=1) == label

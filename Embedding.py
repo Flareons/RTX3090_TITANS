@@ -187,7 +187,7 @@ os.makedirs("tok_data/test_tok", exist_ok=True)
 
 
 # Load data
-dataset = pd.read_json(r"data\function.json")
+dataset = pd.read_json("data/function.json")
 
 print("Dataset loaded successfully.")
 print("Dataset shape:", dataset.shape)
